@@ -1,5 +1,6 @@
 # Apache-DTU
 DCS Modification that handles loading of JSON configuration for the AH-64D "Apache."
+
 [Apache-DTU.io Web Interface](http://www.apache-dtu.io/)
 
 ## Install
@@ -14,6 +15,9 @@ Apache-DTU is designed to be utilized from within the cockpit. Loading JSON data
 
 All fields and settings are *optional*, if you desire skipping a section of data, simply omit it from the DTC.json file.
 Although [the web interface](http://www.apache-dtu.io/) will generate DTC.json, the json may also be created by manually editing the DTU array within the *DCS-Apache-DTU.lua* file directly (prior to loading into mission), then typing **SAVE** into the KU and actioning the **DTU** button (*L1*) from within the cockpit. If successful, the KU screen will display "*SAVE SUCCESS*." Once generated, the mission does not need to be reloaded; simply clear the KU screen and type "**LOAD**" followed by actioning **L1** (DTU) whilst on the **DMS** page on the MPD. Not needing to reload the mission applies to making real-time changes to DTC.json as well. If something is wrong with your configuration, you may edit the DTC.json file without exiting mission.
+
+## Bug Reporting
+Please report bugs and issues with either the web interface or the DCS modification here on GitHub.
 
 ### The "To-Do" List:
 - Implement post-input data validation and correction/rewind feature (DCS-end)
