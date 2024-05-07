@@ -20,10 +20,10 @@ Although [the web interface](http://www.apache-dtu.io/) will generate DTC.json, 
 Please report bugs and issues with either the web interface or the DCS modification here on GitHub.
 
 ### The "To-Do" List:
-- Implement post-input data validation and correction/rewind feature (DCS-end)
-- Implement input validation on web interface, remove input validation bloat on DCS-end
-- Implement "**SAVE**" feature that permits export of current aircraft settings (DCS-end)
-- Presets (capability to load different .json files other than DTC.json) (DCS-end)
-- COM Preset PRI frequency setting (DCS-end)
-- TSD SHOW subpage settings (Implemented on DCS-end, need to implement on web interface)
-- Other stuff that I'll remember later (both ends)
+- [ ] Implement post-input data validation and correction/rewind feature (DCS-end)
+- [ ] Implement input validation on web interface, remove input validation bloat on DCS-end
+- [ ] Implement "**SAVE**" feature that permits export of current aircraft settings (DCS-end)
+- [ ] Presets (capability to load different .json files other than DTC.json) (DCS-end)
+- [x] COM Preset PRI frequency setting (DCS-end)
+- [ ] TSD SHOW subpage settings (Implemented on DCS-end, need to implement on web interface)
+- [ ] Other stuff that I'll remember later (both ends)

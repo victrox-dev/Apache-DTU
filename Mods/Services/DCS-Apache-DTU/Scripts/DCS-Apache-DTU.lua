@@ -4,7 +4,10 @@ Filename: DCS-Apache-DTU.lua
 Description: Controls logic and behavior of "data transfer unit" by loading a .json, then actioning
 ------------ the appropriate buttons in-pit to fill in the data as determined by the user.
 Initial Release: 2024-04-24
-Current Version: 1.0.1.0
+
+Current Version: 1.0.2.0
+Current Version Release: 2024-05-06
+Changes: Addition of PRIMARY selection for COM presets.
 --]]
 
 --[[
@@ -25,8 +28,6 @@ TODO: .json Presets; User should be able to do something like: "LOAD-DTC1", then
 	- Apache-DTU directory.
 
 TODO: Add mode code on/off settings
-
-TODO: Add COM Preset PRI frequency setting
 --]]
 
 local ApacheDTU = {
@@ -84,6 +85,7 @@ local DTU = {
 			FM2 = "36.25",
 			FM2_Cipher = false,
 			FM2_CNV = "3",
+			PRI_FREQ = "FM1",
 			deleteExistingNET = true,
 			NET = {
 				[1] = {
@@ -113,6 +115,7 @@ local DTU = {
 			FM2 = "36.25",
 			FM2_Cipher = false,
 			FM2_CNV = "3",
+			PRI_FREQ = "FM1",
 			deleteExistingNET = true
 		},
 		Preset4 = { -- Can add and remove Preset1 thru Preset10 as desired
@@ -128,6 +131,7 @@ local DTU = {
 			FM2 = "36.25",
 			FM2_Cipher = false,
 			FM2_CNV = "3",
+			PRI_FREQ = "FM2",
 			deleteExistingNET = true
 		},
 		XPNDR = {
@@ -163,7 +167,7 @@ local DTU = {
 			}
 		}
 	},
-	TSD = { -- Also accepts TARGETS = {(same format)} and HAZARDS = {(same format)}
+	TSD = {
 		WAYPOINTS = { -- if any field is non-existent for the given point, it accepts the default.
 			[1] = {
 				IDENT = "SP",
@@ -298,6 +302,15 @@ local DTU = {
 				[6] = "C52",
 				[7] = "C53",
 				[8] = "C54"
+			},
+			BRAVO = {
+				[1] = "W01",
+				[2] = "W02",
+				[3] = "C51",
+				[4] = "C57",
+				[5] = "C59",
+				[6] = "C52",
+				[7] = "C53"
 			}
 		},
 		SETTINGS = {
@@ -587,10 +600,6 @@ function ApacheDTU.Load_TSD()
 		ApacheDTU.Enter_TSD_Points(DTU.TSD.WAYPOINTS, "WP")
 	end
 
-	if DTU.TSD.HAZARDS then
-		ApacheDTU.Enter_TSD_Points(DTU.TSD.HAZARDS, "HZ")
-	end
-
 	if DTU.TSD.CONTROLMEASURES then
 		ApacheDTU.Enter_TSD_Points(DTU.TSD.CONTROLMEASURES, "CM")
 	end
@@ -871,6 +880,14 @@ function ApacheDTU.Load_COM()
 			ApacheDTU.CycleButton(presetBtn, _devices.leftMPD, _mapMPD) -- Select PRESET "x" on COM page
 			ApacheDTU.CycleButton("B6", _devices.leftMPD, _mapMPD) -- PRESET EDIT
 
+			if preset.PRI_FREQ then
+				local _mapPRIFreq = {
+					VHF = "L1", UHF = "L3", FM1 = "L5", FM2 = "R2"
+				}
+				ApacheDTU.CycleButton("L4", _devices.leftMPD, _mapMPD) -- PRIMARY
+				ApacheDTU.CycleButton(_mapPRIFreq[preset.PRI_FREQ], _devices.leftMPD, _mapMPD) -- Select correct primary
+			end
+
 			if preset.UNIT_ID then
 				if string.len(preset.UNIT_ID) <= 8 then
 					ApacheDTU.CycleButton("L1", _devices.leftMPD, _mapMPD) -- UNIT ID (Max 8 char)
@@ -1130,7 +1147,7 @@ end
 
 function ApacheDTU.Enter_TSD_Points(_pointTable, _type)
 	local _mapPointType = {
-		WP = "L3", HZ = "L4", CM = "L5", TG = "L6"
+		WP = "L3", CM = "L5", TG = "L6"
 	}
 
 	ApacheDTU.CycleButton("TSD", _devices.rightMPD, _mapMPD) -- TSD
