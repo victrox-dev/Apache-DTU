@@ -8,7 +8,9 @@ DCS Modification that handles loading of JSON configuration for the AH-64D "Apac
 - Extract/Unzip.
 - Drag/Drop "Mods" file structure from the extracted release folder to your DCS Saved Games directory. E.g., C:/Users/*your_username*/Saved Games/DCS.openbeta/**Mods**
 - Add the following code to "**Export.lua**" within the "**Scripts**" directory under DCS's Saved Games folder. E.g., C:/Users/*your_username*/Saved Games/DCS.openbeta/**Scripts/Export.lua**
-`pcall(function() local dcsApacheDtu=require('lfs');dofile(dcsApacheDtu.writedir()..[[Mods\Services\DCS-Apache-DTU\Scripts\DCS-Apache-DTU.lua]]); end,nil);`
+```lua
+pcall(function() local dcsApacheDtu=require('lfs');dofile(dcsApacheDtu.writedir()..[[Mods\Services\DCS-Apache-DTU\Scripts\DCS-Apache-DTU.lua]]); end,nil);
+```
 
 ## Usage
 Apache-DTU is designed to be utilized from within the cockpit. Loading JSON data is carried out by navigating to the **DMS** page by pressing **B1** (M) twice. On this page, **DTU** should be displayed under **L1**. Users must type "**LOAD**" into the Keyboard Unit (KU), then press **L1** while on the DMS page. The script will immediately clear the KU screen and begin loading data into the Apache as defined in *DTC.json* from within C:/Users/*your_username*/Saved Games/DCS.openbeta/Mods/Services/DCS-Apache-DTU/**DTC**
