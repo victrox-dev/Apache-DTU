@@ -8,6 +8,13 @@ Initial Release: 2024-04-24
 Current Version: 1.0.2.0
 Current Version Release: 2024-05-06
 Changes: Addition of PRIMARY selection for COM presets.
+
+Current Version: 1.0.3.0
+Current Version Release: 2024-xx-xx
+Changes:
+	- Moved JSON containing folder above DCS's Saved Games folder. Now DCS_AH64D, mimicking that of DCS_OH58D by PC.
+	- Addition of JSON presets
+	- Addition of Master Zeroize Switch; functions as a cease-operation switch. This will stop a load that's in-progress.
 --]]
 
 --[[
@@ -24,18 +31,19 @@ TODO: Add validation check to TSD RTM subpage... currently doesn't check if user
 TODO: Exporting of current AC settings. A lot of work involved in that... later problem.
 	- Will probably end up refactoring the entire code at this point.
 
-TODO: .json Presets; User should be able to do something like: "LOAD-DTC1", then the program looks for DTC1.json in the
-	- Apache-DTU directory.
-
 TODO: Add mode code on/off settings
+
+TODO: SHOT page export to .miz for those that don't have CF. Reference require('terrain').GetTerrainConfig('id')
 --]]
 
 local ApacheDTU = {
 	dataReady = true, -- state tracking
 	dataLoadCoroutine = nil, -- for actioning the load coroutine
-	dataSaveCoroutine = nil -- same as above... but for save.
+	dataSaveCoroutine = nil, -- same as above... but for save.
+	flightPathCoroutine = nil,
+	tempLoadString = nil
 }
-local JSON = loadfile("Scripts\\JSON.lua")() -- didn't know this existed... thanks SRS!
+local JSON = loadfile([[Scripts\JSON.lua]])() -- didn't know this existed... thanks SRS!
 ApacheDTU.JSON = JSON
 
 local _devices = { -- for actioning buttons with performClickableAction
@@ -45,7 +53,9 @@ local _devices = { -- for actioning buttons with performClickableAction
 }
 
 local _indicators = { -- displays for pulling data
+	leftMPD_num = nil,
 	leftMPD = nil,
+	rightMPD_num = nil,
 	rightMPD = nil,
 	KU = nil
 }
@@ -398,8 +408,11 @@ function ApacheDTU.ah64()
 	local _seat = get_param_handle("SEAT"):get()
 	local _T1_L = nil -- Left MPD T1
 	local _T1_R = nil -- Right MPD T1
+	local _MasterZeroize = nil
 
 	if _seat == 0 then -- PLT
+		_indicators.leftMPD_num = 6
+		_indicators.rightMPD_num = 8
 		_indicators.leftMPD = ApacheDTU.getListIndicatorValue(6)
 		_indicators.rightMPD = ApacheDTU.getListIndicatorValue(8)
 		_indicators.KU = ApacheDTU.getListIndicatorValue(15)
@@ -408,7 +421,10 @@ function ApacheDTU.ah64()
 		_devices.KU = 29
 		_devices.leftMPD = 42
 		_devices.rightMPD = 43
+		_MasterZeroize = GetDevice(0):get_argument_value(804)
 	else -- CPG
+		_indicators.leftMPD_num = 10
+		_indicators.rightMPD_num = 12
 		_indicators.leftMPD = ApacheDTU.getListIndicatorValue(10)
 		_indicators.rightMPD = ApacheDTU.getListIndicatorValue(12)
 		_indicators.KU = ApacheDTU.getListIndicatorValue(14)
@@ -417,28 +433,38 @@ function ApacheDTU.ah64()
 		_devices.KU = 30
 		_devices.leftMPD = 44
 		_devices.rightMPD = 45
+		_MasterZeroize = GetDevice(0):get_argument_value(802)
 	end
 
-	if _indicators.leftMPD["PB1_1"] == "DTU" then
-		if _T1_L > 0 and ApacheDTU.dataReady and _indicators.KU["Standby_text"] == "SAVE" then
-			ApacheDTU.dataSaveCoroutine = coroutine.create(ApacheDTU.SaveDTC)
+	if _indicators.leftMPD ~= nil then
+		if _indicators.leftMPD["PB1_1"] == "DTU" then
+			if _T1_L > 0 and ApacheDTU.dataReady and _indicators.KU["Standby_text"] == "SAVE" then
+				ApacheDTU.dataSaveCoroutine = coroutine.create(ApacheDTU.SaveDTC)
+			end
+
+			if _T1_L > 0 and ApacheDTU.dataReady and _indicators.KU["Standby_text"]:find("LOAD") ~= nil then
+				ApacheDTU.tempLoadString = _indicators.KU["Standby_text"]:gsub('#', '')
+				ApacheDTU.dataReady = false
+				ApacheDTU.dataLoadCoroutine = coroutine.create(ApacheDTU.LoadDTC)
+			end
 		end
 
-		if _T1_L > 0 and ApacheDTU.dataReady and _indicators.KU["Standby_text"] == "LOAD" then
-			ApacheDTU.dataReady = false
-			ApacheDTU.dataLoadCoroutine = coroutine.create(ApacheDTU.LoadDTC)
+		if _indicators.rightMPD["PB1_1"] == "DTU" then
+			if _T1_R > 0 and ApacheDTU.dataReady and _indicators.KU["Standby_text"] == "SAVE" then
+				ApacheDTU.dataSaveCoroutine = coroutine.create(ApacheDTU.SaveDTC)
+			end
+
+			if _T1_R > 0 and ApacheDTU.dataReady and _indicators.KU["Standby_text"]:find("LOAD") ~= nil then
+				ApacheDTU.tempLoadString = _indicators.KU["Standby_text"]:gsub('#', '')
+				ApacheDTU.dataReady = false
+				ApacheDTU.dataLoadCoroutine = coroutine.create(ApacheDTU.LoadDTC)
+			end
 		end
 	end
 
-	if _indicators.rightMPD["PB1_1"] == "DTU" then
-		if _T1_R > 0 and ApacheDTU.dataReady and _indicators.KU["Standby_text"] == "SAVE" then
-			ApacheDTU.dataSaveCoroutine = coroutine.create(ApacheDTU.SaveDTC)
-		end
-
-		if _T1_R > 0 and ApacheDTU.dataReady and _indicators.KU["Standby_text"] == "LOAD" then
-			ApacheDTU.dataReady = false
-			ApacheDTU.dataLoadCoroutine = coroutine.create(ApacheDTU.LoadDTC)
-		end
+	if _MasterZeroize > 0 then -- Deals with aborting mission load
+		ApacheDTU.dataLoadCoroutine = nil
+		ApacheDTU.dataReady = true -- reset to true so we can try again in the future
 	end
 
 	-- COROUTINE HANDLER
@@ -453,12 +479,22 @@ function ApacheDTU.ah64()
 			coroutine.resume(ApacheDTU.dataSaveCoroutine)
 		end
 	end
+
+	if ApacheDTU.flightPathCoroutine ~= nil then
+		if coroutine.status(ApacheDTU.flightPathCoroutine) ~= "dead" then
+			coroutine.resume(ApacheDTU.flightPathCoroutine)
+		end
+	end
 	-- COROUTINE HANDLER
 end
 
 function ApacheDTU.LoadDTC()
 	--
-	dtc = io.open(lfs.writedir() .. [[Mods\Services\DCS-Apache-DTU\DTC\DTC.json]], "r")
+	local dtc = nil
+
+	local preset = ApacheDTU.tempLoadString:match("LOAD.(.*)") -- Get Preset JSON file name after "LOAD" + 1 character
+
+	dtc = io.open(lfs.writedir() .. [[..\DCS_AH64D\]] .. (preset and preset or 'DTC') .. [[.json]], "r") -- Mods\Services\DCS-Apache-DTU\DTC\
 
 	if dtc then
 		--
@@ -511,9 +547,7 @@ function ApacheDTU.Load_WPN()
 		for slot,freq in pairs(DTU.WPN.FREQ) do
 			local slotByte = slot:byte()
 			if slotByte >= 65 and slotByte <= 82 and slotByte ~= 73 and slotByte ~= 79 then -- valid slot?
-				ApacheDTU.log("Verified slot.")
 				if ApacheDTU.Validate_PRF(tonumber(freq)) then -- valid freq?
-					ApacheDTU.log("Validated PRF")
 					ApacheDTU.CycleButton(_mapSlot[slot], _devices.leftMPD, _mapMPD) -- Select appropriate slot in FREQ table
 					ApacheDTU.KU_Data_Enter(freq)
 				end
@@ -632,9 +666,11 @@ function ApacheDTU.Load_TSD()
 			ApacheDTU.CycleButton("L2", _devices.rightMPD, _mapMPD) -- ADD
 			for i,point in ipairs(route) do -- Adding points to RTE
 				local btn = 6 - i
+				-- ApacheDTU.log("Btn: " .. btn .. " Point: " .. point)
 				ApacheDTU.CycleButton("L1", _devices.rightMPD, _mapMPD) -- POINT
 				ApacheDTU.KU_Data_Enter(point) -- Whichever point
 				if btn < 2 then -- need to scroll up
+					ApacheDTU.log("Scrolling up...")
 					ApacheDTU.CycleButton("R1", _devices.rightMPD, _mapMPD) -- Scroll up
 					ApacheDTU.CycleButton("R2", _devices.rightMPD, _mapMPD) -- Add to RTE
 				else
@@ -1188,16 +1224,123 @@ end
 
 function ApacheDTU.SaveDTC()
 	ApacheDTU.dataReady = false
-	-- ApacheDTU.log("Exporting DTC to " .. lfs.writedir() .. [[AH64D-DTU\DTC.json]])
-	dtc = io.open(lfs.writedir() .. [[Mods\Services\DCS-Apache-DTU\DTC\DTC.json]], "w")
+	ApacheDTU.log("Exporting DTC to " .. lfs.writedir() .. [[..\DCS_AH64D\DTC.json]])
+	dtc = io.open(lfs.writedir() .. [[..\DCS_AH64D\DTC.json]], "w")
 	if dtc then
-		dtc:write(ApacheDTU.JSON:encode(DTU))
+		dtc:write(ApacheDTU.JSON:encode_pretty(DTU))
 		dtc:flush()
 	end
 	dtc:close()
+	ApacheDTU.Save_SHOT()
+
 	ApacheDTU.dataReady = true
 	ApacheDTU.CycleButton("CLR", _devices.KU, _mapKU)
 	ApacheDTU.KU_Data_Enter("SAVE SUCCESS")
+end
+
+function ApacheDTU.Save_SHOT()
+	local zip = require('minizip') -- For creation of .miz (zip)
+	local ter = require('terrain') -- Utilizing for MGRS conversion
+	local timeStr = os.date('%d%m%Y_%H-%M')
+
+	ApacheDTU.log("Saving SHOT page data")
+	ApacheDTU.CycleButton("TSD", _devices.rightMPD, _mapMPD) -- TSD
+	ApacheDTU.CycleButton("T5", _devices.rightMPD, _mapMPD) -- COORD
+	ApacheDTU.CycleButton("T6", _devices.rightMPD, _mapMPD) -- SHOT
+
+	local shotLogCSV = io.open(lfs.writedir() .. [[..\DCS_AH64D\SHOT_]] .. timeStr .. [[.csv]], "w")
+	shotLogCSV:write("Index,Mode,Time,Owner,MGRS\n")
+
+	local numPages = nil
+	for result in list_indication(_indicators.rightMPD_num):gmatch("PAGE\n./([^\n]+)") do
+		numPages = tonumber(result)
+	end
+
+	local SHOT, curShotIndex = {}, 1
+	local _mapShot = {
+		[1] = "Index", [2] = "Mode", [3] = "Time", [4] = "Owner", [5] = "GCS", [6] = "DATUM", [7] = "MGRS"
+	}
+
+	for i = 1, numPages do
+		local t, j, count = {}, 1, 1
+		for val in list_indication(_indicators.rightMPD_num):gmatch("LABEL[^\n]+\n([^\n]+)\n") do
+			table.insert(t, val)
+			if j % 7 == 0 then
+				table.insert(SHOT, {})
+			end
+			j = j + 1
+		end
+
+		for x,v in ipairs(t) do
+			local key = _mapShot[x - ((count - 1) * 7)]
+			if key ~= "GCS" and key ~= "DATUM" then
+				shotLogCSV:write(v .. ',')
+				SHOT[curShotIndex][key] = v
+			end
+			if x % 7 == 0 then
+				count = count + 1
+				curShotIndex = curShotIndex + 1
+				shotLogCSV:write('\n')
+			end
+		end
+		ApacheDTU.CycleButton("B3", _devices.rightMPD, _mapMPD) -- Next page of SHOT
+	end
+	shotLogCSV:close()
+
+	if #SHOT > 0 then
+		ApacheDTU.log("Writing SHOT page data to JSON")
+		local shotLogJSON = io.open(lfs.writedir() .. [[..\DCS_AH64D\SHOT_]] .. timeStr .. [[.json]], "w")
+		shotLogJSON:write(ApacheDTU.JSON:encode(SHOT))
+		shotLogJSON:close()
+	end
+
+	local mizNavPointTable = mission.coalition.blue.nav_points
+	for i,v in ipairs(SHOT) do
+		local shotTemplate = {
+			["type"] = "Default",
+			["comment"] = "",
+			["callsignStr"] = "DEF",
+			["id"] = 101 + i,
+			["properties"] = {
+				["vnav"] = 1,
+				["scale"] = 0,
+				["vangle"] = 0,
+				["angle"] = 0,
+				["steer"] = 2
+			},
+			["y"] = 0,
+			["x"] = 0
+		}
+		local x, y = ter.convertMGRStoMeters(v.MGRS)
+		shotTemplate.comment = "Missile: " .. v.Index .. " | Time: " .. v.Time .. " | Owner: " .. v.Owner
+		shotTemplate.callsignStr = "SHOT" .. v.Index
+		shotTemplate.x = x
+		shotTemplate.y = y
+		table.insert(mizNavPointTable, shotTemplate)
+	end
+	mission.coalition.blue.nav_points = mizNavPointTable
+
+	-- Create AAR.miz
+	miz = zip.zipCreate(lfs.writedir() .. [[..\DCS_AH64D\AAR_]] .. timeStr .. [[.miz]])
+	if miz == nil then
+		ApacheDTU.log("Failed to create AAR.miz")
+		return false
+	end
+	ApacheDTU.addTableToZip(miz, "mission", mission)
+	ApacheDTU.log("Added mission to .miz")
+	miz:zipAddFile('options', lfs.writedir() .. [[Mods\Services\DCS-Apache-DTU\Scripts\mission_template\options]])
+	ApacheDTU.log("Added options to .miz")
+	miz:zipAddFile('theatre', lfs.writedir() .. [[Mods\Services\DCS-Apache-DTU\Scripts\mission_template\theatre]])
+	ApacheDTU.log("Added theatre to .miz")
+	miz:zipAddFile('warehouses', lfs.writedir() .. [[Mods\Services\DCS-Apache-DTU\Scripts\mission_template\warehouses]])
+	ApacheDTU.log("Added warehouses to .miz")
+	miz:zipAddFile('l10n/DEFAULT/dictionary', lfs.writedir() .. [[Mods\Services\DCS-Apache-DTU\Scripts\mission_template\l10n/DEFAULT/dictionary]])
+	ApacheDTU.log("Added dictionary to .miz")
+	miz:zipAddFile('l10n/DEFAULT/mapResource', lfs.writedir() .. [[Mods\Services\DCS-Apache-DTU\Scripts\mission_template\l10n/DEFAULT/mapResource]])
+	ApacheDTU.log("Added mapResource to .miz")
+	miz:zipClose()
+	ApacheDTU.log("Closed .miz; creation complete!")
+	-- Create AAR.miz
 end
 
 function ApacheDTU.KU_Data_Enter(_string)
@@ -1222,38 +1365,108 @@ function ApacheDTU.CycleArg(_argSet, _indicator, _label, _action, _device, _map)
 	end
 end
 
+function ApacheDTU.LogFlightPath()
+	-- id,T=Long|Lat|Alt|Roll|Pitch|Yaw|Z|X|Heading
+	local fTacView = io.open(lfs.writedir() .. [[..\DCS_AH64D\AAR_]] .. os.date('%d%m%Y_%H-%M') .. [[.txt.acmi]], "w")
+	fTacView:write('FileType=text/acmi/tacview\nFileVersion=2.2\n0,ReferenceTime=2022-05-16T18:28:39Z\n0,Title=ApacheDTU Export\n0,DataRecorder=DCS-Apache-DTU\n0,DataSource=DCS\n0,Author=DCS-Apache-DTU\n30000102,Type=Air+Rotorcraft,Name=AH-64D_BLK_II,Pilot=YOU\n')
+	local startTime = LoGetModelTime()
+	local lastHeading = LoGetSelfData().Heading * 180 / math.pi
+	local route = mission.coalition.blue.country[1].helicopter.group[1].route.points
+	while true do
+		local currentTime = LoGetModelTime()
+		if (currentTime - startTime) > 5 then -- TODO: Create special menu option for this delay
+			local currentSelfData = LoGetSelfData()
+			local currentHeading = currentSelfData.Heading * 180 / math.pi -- Heading in radians, so convert to degrees
+			local headingVariation = math.abs((lastHeading + 180) % 360 - (currentHeading + 180) % 360)
+			if headingVariation > 5 then
+				local position = currentSelfData.Position -- {x, y (alt), z}
+				local point = {
+					["alt"] = position.y,
+					["action"] = "Turning Point",
+					["alt_type"] = "BARO",
+					["speed"] = LoGetTrueAirSpeed(),
+					["task"] = 
+					{
+						["id"] = "ComboTask",
+						["params"] = 
+						{
+							["tasks"] = 
+							{
+							}, -- end of ["tasks"]
+						}, -- end of ["params"]
+					}, -- end of ["task"]
+					["type"] = "Turning Point",
+					["ETA"] = currentTime,
+					["ETA_locked"] = true,
+					["y"] = position.z,
+					["x"] = position.x,
+					["speed_locked"] = #route < 1 and true or false,
+					["formation_template"] = "",
+				}
+				table.insert(route, point)
+				-- ApacheDTU.log('log flight position @ ' .. tostring(currentTime) .. ' #route: ' .. tostring(#route) .. ' deviation: ' .. headingVariation)
+				startTime = currentTime -- reset start time and continue
+				lastHeading = currentHeading
+				-- TacView
+				local pitch, roll, yaw = LoGetADIPitchBankYaw() -- these values are in radians, we will need to convert to degrees here as well.
+				local LLPosition = currentSelfData.LatLongAlt
+				fTacView:write('#' .. currentTime .. '\n30000102,T=' .. LLPosition.Long .. '|' .. LLPosition.Lat .. '|' .. position.y .. '|' .. roll * 180 / math.pi .. '|' .. pitch * 180 / math.pi .. '|' .. yaw * 180 / math.pi .. '|' .. position.z .. '|' .. position.x .. '|' .. currentHeading .. '\n')
+			end
+		end
+		coroutine.yield()
+	end
+	fTacView:close()
+end
+
 function ApacheDTU.CycleButton(_btn, _deviceID, _map)
 	local startTime = LoGetModelTime()
 	GetDevice(_deviceID):performClickableAction(_map[_btn], 1) -- Depress
 	while true do
 		local currentTime = LoGetModelTime()
-		if (currentTime - startTime) > 0.2 then -- 0.2 is the delay in seconds
+		if (currentTime - startTime) > ApacheDTU.depressTime then -- 0.2 is the delay in seconds
 			break
 		end
 		coroutine.yield()
 	end
 	GetDevice(_deviceID):performClickableAction(_map[_btn], 0) -- Release
-	-- The below is time between button presses:
-	-- startTime = LoGetModelTime() -- reset
-	-- while true do
-	-- 	local currentTime = LoGetModelTime()
-	-- 	if (currentTime - startTime) > 0.1 then
-	-- 		break
-	-- 	end
-	-- 	coroutine.yield()
-	-- end
+end
+
+function ApacheDTU.saveTable(fileName, name, table) -- From me_utilities.lua
+	local S = require('Serializer') -- For serializing and saving lua tables to file (for creation of .miz)
+	local f = io.open(fileName, 'w')
+	if f then
+		local s = S.new(f)
+		s:serialize_simple2(name, table)
+		f:close()
+	end
+end
+
+function ApacheDTU.addTableToZip(mission, name, table) -- From me_utilities.lua
+	local tempFilePath = lfs.writedir() .. [[Mods\Services\DCS-Apache-DTU\Scripts\temp\temp.lua]]
+	ApacheDTU.saveTable(tempFilePath, name, table)
+	mission:zipAddFile(name, tempFilePath)
+	os.remove(tempFilePath)
 end
 
 function LuaExportStart()
-	file = io.open(lfs.writedir() .. [[Logs\DCS-Apache-DTU.log]], "w")
-	function ApacheDTU.log(str)
-		if file then
-			file:write(str .. "\n")
-			file:flush()
+	if LoGetSelfData().Name == "AH-64D_BLK_II" then
+		loadfile(lfs.writedir() .. [[Config\options.lua]])()
+		dofile(lfs.writedir() .. [[Mods\Services\DCS-Apache-DTU\Scripts\mission_template\mission]]) -- TODO: Change this to loadfile() ???
+		file = io.open(lfs.writedir() .. [[Logs\DCS-Apache-DTU.log]], "w")
+		function ApacheDTU.log(str)
+			if file then
+				file:write(str .. "\n")
+				file:flush()
+			end
+		end
+
+		ApacheDTU.log("---- Started Apache DTU ----\n")
+		ApacheDTU.depressTime = options.plugins["DCS-Apache-DTU"]["DepressTime"]
+		-- ApacheDTU.log("Start position: " .. LoGetSelfData().Position.x .. " " .. LoGetSelfData().Position.z)
+		if true then -- TODO: Change this if statement to reflect an option from Special menu
+			ApacheDTU.flightPathCoroutine = coroutine.create(ApacheDTU.LogFlightPath)
 		end
 	end
-
-	ApacheDTU.log("---- Started Apache DTU ----\n")
 end
 
 function LuaExportAfterNextFrame()
@@ -1263,23 +1476,23 @@ function LuaExportAfterNextFrame()
 end
 
 function ApacheDTU.getListIndicatorValue(IndicatorID) -- Sourced from SRS
-    local ListIindicator = list_indication(IndicatorID)
-    local TmpReturn = {}
+	local ListIindicator = list_indication(IndicatorID)
+	local TmpReturn = {}
 
-    if ListIindicator == "" then
-        return nil
-    end
+	if ListIindicator == "" then
+		return nil
+	end
 
-    local ListindicatorMatch = ListIindicator:gmatch("-----------------------------------------\n([^\n]+)\n([^\n]*)\n")
-    while true do
-        local Key, Value = ListindicatorMatch()
-        if not Key then
-            break
-        end
-        TmpReturn[Key] = Value
-    end
+	local ListindicatorMatch = ListIindicator:gmatch("-----------------------------------------\n([^\n]+)\n([^\n]*)\n")
+	while true do
+		local Key, Value = ListindicatorMatch()
+		if not Key then
+			break
+		end
+		TmpReturn[Key] = Value
+	end
 
-    return TmpReturn
+	return TmpReturn
 end
 
 -- {
